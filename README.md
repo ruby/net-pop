@@ -1,4 +1,4 @@
-# Net::Pop
+# Net::POP3
 
 This library provides functionality for retrieving
 email via POP3, the Post Office Protocol version 3. For details

@@ -1,5 +1,5 @@
 module Net
-  module Pop
+  class POP3
     VERSION = "0.1.0"
   end
 end

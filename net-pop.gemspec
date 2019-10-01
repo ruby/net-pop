@@ -4,7 +4,7 @@ require "net/pop/version"
 
 Gem::Specification.new do |spec|
   spec.name          = "net-pop"
-  spec.version       = Net::Pop::VERSION
+  spec.version       = Net::POP3::VERSION
   spec.authors       = ["Hiroshi SHIBATA"]
   spec.email         = ["hsbt@ruby-lang.org"]
 
