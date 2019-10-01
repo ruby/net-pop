@@ -1,4 +1,7 @@
 source "https://rubygems.org"
 
-# Specify your gem's dependencies in net-pop.gemspec
-gemspec
+group :development do
+  gem "bundler"
+  gem "rake"
+  gem "test-unit"
+end
