@@ -2,7 +2,7 @@
 
 This library provides functionality for retrieving
 email via POP3, the Post Office Protocol version 3. For details
-of POP3, see [RFC1939] (http://www.ietf.org/rfc/rfc1939.txt).
+of POP3, see [RFC1939](http://www.ietf.org/rfc/rfc1939.txt).
 
 ## Installation
 
