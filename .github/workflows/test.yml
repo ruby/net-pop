@@ -12,7 +12,7 @@ jobs:
         run: |
           versions=$(curl -s 'https://cache.ruby-lang.org/pub/misc/ci_versions.json' | jq -c)
           echo "::set-output name=value::${versions}"
-  build:
+  test:
     needs: ruby-versions
     name: build (${{ matrix.ruby }} / ${{ matrix.os }})
     strategy:
