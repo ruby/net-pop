@@ -470,7 +470,7 @@ module Net
 
     # Does this instance use APOP authentication?
     def apop?
-      @apop
+      @apop != false
     end
 
     # Does this instance use OAUTH2 authentication?
