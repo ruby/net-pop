@@ -975,6 +975,11 @@ module Net
     end
 
     def oauth2(account, token)
+      # We first send the AUTH XOAUTH2 string to tell the server we want
+      # to authenticate using XOAUTH2. If it responds with + we send
+      # a base64 encoded string containing the email and the token.
+      # POP RFC: https://www.rfc-editor.org/rfc/rfc1734
+      
       sep = 1.chr # ^A character
 
       check_response_auth(critical {
