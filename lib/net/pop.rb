@@ -691,6 +691,24 @@ module Net
       end
     end
 
+    # Returns whether the server supports the +AUTH+ command using +mechanism+.
+    # If +mechanism+ isn't given, returns nil when the server doesn't support
+    # +SASL+ and an array of supported mechanism names otherwise.
+    def sasl_capable?(mechanism = nil) command.sasl_capable? mechanism end
+
+    # Returns truthy if the server reports support for +tag+ with +param+.  If
+    # no +param+ is given, an array of the capability's parameters is returned.
+    def capable?(tag, param = nil) command.capable? tag, param end
+
+    # Returns a hash of the server's reported capabilities.  The list is cached.
+    #
+    # Each key is a capability name, and each value is an array of that
+    # capability's parameters.
+    def capabilities;  command.capabilities  end
+
+    # Returns a hash of the server's reported capabilities, ignoring the cache.
+    def capabilities!; command.capabilities! end
+
     # Resets the session.  This clears all "deleted" marks from messages.
     #
     # This method raises a POPError if an error occurs.
@@ -916,6 +934,24 @@ module Net
                      account,
                      Digest::MD5.hexdigest(@apop_stamp + password))
       })
+    end
+
+    def sasl_capable?(type) capable?("SASL", type) end
+    def sasl_mechanisms; sasl_capable? || [] end
+    def capabilities;  @capabilities ||= capa end
+    def capabilities!; @capabilities   = capa end
+
+    def capable?(tag, param = nil)
+      capability = capabilities[tag.upcase] and
+        param ? capability&.include?(param.upcase) : capability
+    end
+
+    def capa
+      critical {
+        getok 'CAPA'
+        @socket.to_enum(:each_list_item)
+          .to_h {|line| tag, *params = line.upcase.split; [tag, params] }
+      }
     end
 
     def list
