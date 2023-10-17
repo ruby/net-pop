@@ -93,6 +93,40 @@ class TestPOP < Test::Unit::TestCase
     assert_not_predicate res, :frozen?
   end
 
+  test "CAPA" do
+    pop_test do |pop|
+      pop.start(@ok_user, @users[@ok_user]) do |pop|
+        assert_equal(
+          {
+            "TOP" => [], "USER" => [], "STLS" => [], "EXPIRE" => ["60"],
+            "IMPLEMENTATION" => %w[BLURDYBLURP POP3 SERVER],
+            "SASL" => %w[PLAIN OAUTHBEARER XOAUTH DIGEST-MD5 GSSAPI ANONYMOUS],
+          },
+          pop.capabilities
+        )
+
+        assert_equal ["60"], pop.capable?("expire")
+
+        assert pop.capable?("TOP")
+        assert pop.capable?("user")
+        assert_same true, pop.capable?("Implementation", "POP3")
+
+        assert_same nil, pop.capable?("UTF-8")
+        assert_same nil, pop.capable?("UTF-8", "USER")
+
+        assert_kind_of Array, pop.sasl_capable?
+        assert_same    true,  pop.sasl_capable?("PLAIN")
+        assert_same    false, pop.sasl_capable?("CRAM-MD5")
+        assert_equal %w[PLAIN OAUTHBEARER XOAUTH DIGEST-MD5 GSSAPI ANONYMOUS],
+                     pop.sasl_mechanisms
+
+        refute pop.capable? "PIPELINING"
+        refute pop.capable?("Implementation", "POP4")
+        refute pop.sasl_capable? "CRAM-MD5"
+      end
+    end
+  end
+
   def pop_test(apop=false)
     host = 'localhost'
     server = TCPServer.new(host, 0)
@@ -134,6 +168,17 @@ class TestPOP < Test::Unit::TestCase
     user = nil
     while line = sock.gets
       case line
+      when /\ACAPA\r\n\z/i
+        (<<~CAPA).each_line { sock.print "#{_1.chop}\r\n" }
+          +OK List of capabilities follows
+          TOP
+          USER
+          SASL PLAIN OAUTHBEARER XOAUTH DIGEST-MD5 GSSAPI ANONYMOUS
+          STLS
+          IMPLEMENTATION BlurdyBlurp POP3 server
+          EXPIRE 60
+          .
+        CAPA
       when /^USER (.+)\r\n/
         user = $1
         if @users.key?(user)
