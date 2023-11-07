@@ -241,11 +241,12 @@ module Net
 
     # Starts a POP3 session and iterates over each POPMail object,
     # yielding it to the +block+.
-    # This method is equivalent to:
     #
-    #     Net::POP3.start(address, port, account, password) do |pop|
-    #       pop.each_mail do |m|
-    #         yield m
+    # All other arguments are forwarded to Net::POP3.start, equivalent to:
+    #
+    #     Net::POP3.start(*args, **kwargs) do |pop|
+    #       pop.each_mail do |mail|
+    #         yield mail
     #       end
     #     end
     #
@@ -259,36 +260,33 @@ module Net
     #       m.delete if $DELETE
     #     end
     #
-    def POP3.foreach(address, port = nil,
-                     account = nil, password = nil,
-                     isapop = false, &block)  # :yields: message
-      start(address, port, account, password, isapop) {|pop|
+    def POP3.foreach(*args, **kwargs, &block)  # :yields: message
+      start(*args, **kwargs) {|pop|
         pop.each_mail(&block)
       }
     end
 
     # Starts a POP3 session and deletes all messages on the server.
     # If a block is given, each POPMail object is yielded to it before
-    # being deleted.
+    # being deleted.  All other arguments are forwarded to Net::POP3.start.
     #
     # This method raises a POPAuthenticationError if authentication fails.
     #
     # === Example
     #
     #     Net::POP3.delete_all('pop.example.com', 110,
-    #                          'YourAccount', 'YourPassword') do |m|
-    #       file.write m.pop
+    #                          'YourAccount', 'YourPassword') do |mail|
+    #       file.write mail.pop
     #     end
     #
-    def POP3.delete_all(address, port = nil,
-                        account = nil, password = nil,
-                        isapop = false, &block)
-      start(address, port, account, password, isapop) {|pop|
+    def POP3.delete_all(*args, **kwargs, &block)  # :yields: message
+      start(*args, **kwargs) {|pop|
         pop.delete_all(&block)
       }
     end
 
     # Opens a POP3 session, attempts authentication, and quits.
+    # All arguments are forwarded to ::start.
     #
     # This method raises POPAuthenticationError if authentication fails.
     #
@@ -302,20 +300,18 @@ module Net
     #     Net::POP3.auth_only('pop.example.com', 110,
     #                         'YourAccount', 'YourPassword', true)
     #
-    def POP3.auth_only(address, port = nil,
-                       account = nil, password = nil,
-                       isapop = false)
-      new(address, port, isapop).auth_only account, password
+    def POP3.auth_only(*args, **kwargs)
+      start(*args, **kwargs) { true }
     end
 
     # Starts a pop3 session, attempts authentication, and quits.
     # This method must not be called while POP3 session is opened.
     # This method raises POPAuthenticationError if authentication fails.
-    def auth_only(account, password)
+    #
+    # All arguments are forwarded to #start.  See that method for details.
+    def auth_only(*args, **kwargs)
       raise IOError, 'opening previously opened POP session' if started?
-      start(account, password) {
-        ;
-      }
+      start(*args, **kwargs) { true }
     end
 
     #
@@ -333,8 +329,7 @@ module Net
       @ssl_params = create_ssl_params(*args)
     end
 
-    # Constructs proper parameters from arguments
-    def POP3.create_ssl_params(verify_or_params = {}, certs = nil)
+    def POP3.create_ssl_params(verify_or_params = {}, certs = nil) # :nodoc:
       begin
         params = verify_or_params.to_hash
       rescue NoMethodError
@@ -382,9 +377,16 @@ module Net
     # Session management
     #
 
+    # :call-seq:
+    #   Net::POP3.start(address, port = nil, user = nil, pass = nil, auth: {}, **opts) -> pop
+    #   Net::POP3.start(address, port:  nil, user:  nil, pass:  nil, auth: {}, **opts) -> pop
+    #   Net::POP3.start(address, port = nil, user = nil, pass = nil, auth: {}, **opts) {|pop| }
+    #   Net::POP3.start(address, port:  nil, user:  nil, pass:  nil, auth: {}, **opts) {|pop| }
+    #
     # Creates a new POP3 object and open the connection.  Equivalent to
     #
-    #   Net::POP3.new(address, port, isapop).start(account, password)
+    #   Net::POP3.new(address, port, **opts)
+    #     .start(user, pass, **auth, &block)
     #
     # If +block+ is provided, yields the newly-opened POP3 object to it,
     # and automatically closes it at the end of the session.
@@ -400,32 +402,63 @@ module Net
     #
     def POP3.start(address, port = nil,
                    account = nil, password = nil,
-                   isapop = false, &block)   # :yield: pop
-      new(address, port, isapop).start(account, password, &block)
+                   isapop = false,
+                   user: nil, pass: nil, auth: {},
+                   **kwargs, &block)   # :yield: pop
+      new(address, port, isapop, **kwargs)
+        .start(user || account, pass || password, **auth, &block)
     end
 
+    # :call-seq:
+    #   new(addr, port = nil, **options)
+    #   new(addr, port: nil, ssl: POP3.ssl_params, apop: false,
+    #       read_timeout: 60, open_timeout: 30, debug_output: nil)
+    #
     # Creates a new POP3 object.
     #
     # +address+ is the hostname or ip address of your POP3 server.
     #
-    # The optional +port+ is the port to connect to.
+    # The optional +port+ is the port to connect to.  The default port will be
+    # chosen based on whether or not +ssl+ is used.
     #
-    # The optional +isapop+ specifies whether this connection is going
-    # to use APOP authentication; it defaults to +false+.
+    # The optional +ssl+ should be true to connect using TLS.  When +tls+ is a
+    # hash, it is used to set parameters with
+    # {OpenSSL::SSL::SSLContext#set_params}[https://docs.ruby-lang.org/en/master/OpenSSL/SSL/SSLContext.html#method-i-set_params].
     #
-    # This method does *not* open the TCP connection.
-    def initialize(addr, port = nil, isapop = false)
+    # The +open_timeout+ and +read_timeout+ options will set their
+    # respective IO timeouts on the socket.
+    #
+    # See #set_debug_output for the use of +debug_output.
+    #
+    # The optional +apop+ specifies whether this connection is going
+    # to use APOP authentication; it defaults to +false+.  <em>Warning: APOP is
+    # based on MD5 and it is insecure, obsolete, and should be avoided.</em>
+    #
+    # This method does *not* open the TCP connection.  See #start.
+    def initialize(addr, port_ = nil, isapop = false,
+                   port: nil,
+                   ssl: POP3.ssl_params,
+                   apop: false,
+                   read_timeout: 60,
+                   open_timeout: 30,
+                   debug_output: nil)
+      if port_.respond_to?(:to_hash)
+        return initialize nil, false, **port_
+      elsif isapop.respond_to?(:to_hash)
+        return initialize port_, false, **isapop
+      end
       @address = addr
-      @ssl_params = POP3.ssl_params
-      @port = port
-      @apop = isapop
+      @ssl_params = Hash.try_convert(ssl).dup
+      @ssl_params ||= {} if ssl
+      @port = port || port_
+      @apop = apop || isapop
+      @open_timeout = open_timeout
+      @read_timeout = read_timeout
+      @debug_output = debug_output
 
       @command = nil
       @socket = nil
       @started = false
-      @open_timeout = 30
-      @read_timeout = 60
-      @debug_output = nil
 
       @mails = nil
       @n_mails = nil
@@ -459,7 +492,7 @@ module Net
       end
     end
 
-    # Disable SSL for all new instances.
+    # Disable SSL for this instance.
     def disable_ssl
       @ssl_params = nil
     end
