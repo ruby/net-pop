@@ -24,6 +24,7 @@
 require 'net/protocol'
 require 'digest/md5'
 require 'timeout'
+require 'base64'
 
 begin
   require "openssl"
@@ -173,6 +174,20 @@ module Net
   #       # Rest of the code is the same.
   #     end
   #
+  # === Using OAUTH2
+  #
+  # The net/pop library supports OAUTH2 authentication.
+  # To use OAUTH2, use the Net::OAUTH2 class instead of the Net::POP3 class.
+  # You can use the utility method, Net::POP3.OAUTH2(). For example:
+  #
+  #     require 'net/pop'
+  #
+  #     # Use OAUTH2 authentication if $isoauth2 == true
+  #     pop = Net::POP3.OAUTH2($isoauth2).new('oauth2.example.com', 110)
+  #     pop.start('YourAccount', 'YourToken') do |pop|
+  #       # Rest of the code is the same.
+  #     end
+  #
   # === Fetch Only Selected Mail Using 'UIDL' POP Command
   #
   # If your POP server provides UIDL functionality,
@@ -239,6 +254,21 @@ module Net
       isapop ? APOP : POP3
     end
 
+    # Returns the OAUTH2 if +isoauth2+ is true; otherwise, returns
+    # the POP class. For example:
+    #
+    #     # Example 1
+    #     pop = Net::POP3.OAUTH2($isoauth2).new(addr, port)
+    #
+    #     # Example 2
+    #     Net::POP3.OAUTH2($isoauth2).start(addr, port) do |pop|
+    #       ....
+    #     end
+    #
+    def POP3.OAUTH2(isoauth2)
+      isoauth2 ? OAUTH2 : POP3
+    end
+
     # Starts a POP3 session and iterates over each POPMail object,
     # yielding it to the +block+.
     # This method is equivalent to:
@@ -261,8 +291,8 @@ module Net
     #
     def POP3.foreach(address, port = nil,
                      account = nil, password = nil,
-                     isapop = false, &block)  # :yields: message
-      start(address, port, account, password, isapop) {|pop|
+                     isapop = false, isoauth2 = false, &block)  # :yields: message
+      start(address, port, account, password, isapop, isoauth2) {|pop|
         pop.each_mail(&block)
       }
     end
@@ -282,8 +312,8 @@ module Net
     #
     def POP3.delete_all(address, port = nil,
                         account = nil, password = nil,
-                        isapop = false, &block)
-      start(address, port, account, password, isapop) {|pop|
+                        isapop = false, isoauth2 = false, &block)
+      start(address, port, account, password, isapop, isoauth2) {|pop|
         pop.delete_all(&block)
       }
     end
@@ -302,10 +332,15 @@ module Net
     #     Net::POP3.auth_only('pop.example.com', 110,
     #                         'YourAccount', 'YourPassword', true)
     #
+    # === Example: OAUTH2
+    #
+    #     Net::POP3.auth_only('pop.example.com', 110,
+    #                         'YourAccount', 'YourPassword', false, true)
+    #
     def POP3.auth_only(address, port = nil,
                        account = nil, password = nil,
-                       isapop = false)
-      new(address, port, isapop).auth_only account, password
+                       isapop = false, isoauth2 = false)
+      new(address, port, isapop, isoauth2).auth_only account, password
     end
 
     # Starts a pop3 session, attempts authentication, and quits.
@@ -384,7 +419,7 @@ module Net
 
     # Creates a new POP3 object and open the connection.  Equivalent to
     #
-    #   Net::POP3.new(address, port, isapop).start(account, password)
+    #   Net::POP3.new(address, port, isapop, isoauth2).start(account, password)
     #
     # If +block+ is provided, yields the newly-opened POP3 object to it,
     # and automatically closes it at the end of the session.
@@ -400,8 +435,8 @@ module Net
     #
     def POP3.start(address, port = nil,
                    account = nil, password = nil,
-                   isapop = false, &block)   # :yield: pop
-      new(address, port, isapop).start(account, password, &block)
+                   isapop = false, isoauth2 = false, &block)   # :yield: pop
+      new(address, port, isapop, isoauth2).start(account, password, &block)
     end
 
     # Creates a new POP3 object.
@@ -410,15 +445,16 @@ module Net
     #
     # The optional +port+ is the port to connect to.
     #
-    # The optional +isapop+ specifies whether this connection is going
-    # to use APOP authentication; it defaults to +false+.
+    # The optional +isapop+, +isaoauth2+ specify whether this connection is going
+    # to use APOP or OAUTH2 authentication; it defaults to +false+.
     #
     # This method does *not* open the TCP connection.
-    def initialize(addr, port = nil, isapop = false)
+    def initialize(addr, port = nil, isapop = false, isoauth2 = false)
       @address = addr
       @ssl_params = POP3.ssl_params
       @port = port
       @apop = isapop
+      @oauth2 = isoauth2
 
       @command = nil
       @socket = nil
@@ -434,7 +470,12 @@ module Net
 
     # Does this instance use APOP authentication?
     def apop?
-      @apop
+      @apop != false
+    end
+
+    # Does this instance use OAUTH2 authentication?
+    def oauth2?
+      @oauth2
     end
 
     # does this instance use SSL?
@@ -558,11 +599,16 @@ module Net
       @socket = InternetMessageIO.new(s,
                                       read_timeout: @read_timeout,
                                       debug_output: @debug_output)
-      logging "POP session started: #{@address}:#{@port} (#{@apop ? 'APOP' : 'POP'})"
+      
+
+      auth = @apop ? 'APOP' : (@oauth2 ? 'OAUTH2' : 'POP')
+      logging "POP session started: #{@address}:#{@port} (#{auth})"
       on_connect
       @command = POP3Command.new(@socket)
       if apop?
         @command.apop account, password
+      elsif oauth2?
+        @command.oauth2 account, password 
       else
         @command.auth account, password
       end
@@ -730,8 +776,15 @@ module Net
     end
   end
 
+  class OAUTH2 < POP3
+    def oauth2?
+      true
+    end
+  end
+
   # class aliases
   APOPSession = APOP
+  OAUTH2Session = OAUTH2
 
   #
   # This class represents a message which exists on the POP server.
@@ -918,6 +971,20 @@ module Net
       })
     end
 
+    def oauth2(account, token)
+      # We first send the AUTH XOAUTH2 string to tell the server we want
+      # to authenticate using XOAUTH2. If it responds with + we send
+      # a base64 encoded string containing the email and the token.
+      # POP RFC: https://www.rfc-editor.org/rfc/rfc1734
+      
+      sep = 1.chr # ^A character
+
+      check_response_auth(critical {
+        check_response_auth_xoauth2(get_response('AUTH XOAUTH2'))
+        get_response(Base64.strict_encode64("user=#{account}#{sep}auth=Bearer #{token}#{sep}#{sep}"))
+      })
+    end
+
     def list
       critical {
         getok 'LIST'
@@ -1004,6 +1071,11 @@ module Net
 
     def check_response_auth(res)
       raise POPAuthenticationError, res unless /\A\+OK/i =~ res
+      res
+    end
+
+    def check_response_auth_xoauth2(res)
+      raise POPAuthenticationError, res unless /\A\+/i =~ res
       res
     end
 
