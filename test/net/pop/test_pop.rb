@@ -10,6 +10,23 @@ class TestPOP < Test::Unit::TestCase
     @stamp_base = "#{$$}.#{Time.now.to_i}@localhost"
   end
 
+  def test_default_port
+    pop = Net::POP3.new('localhost')
+    assert_equal pop.port, 110
+  end
+
+  def test_ssl_default_port
+    pop = Net::POP3.new('localhost')
+    pop.enable_ssl
+    assert_equal pop.port, 995
+  end
+
+  def test_starttls_default_port
+    pop = Net::POP3.new('localhost')
+    pop.enable_starttls
+    assert_equal pop.port, 110
+  end
+
   def test_pop_auth_ok
     pop_test(false) do |pop|
       assert_instance_of Net::POP3, pop
