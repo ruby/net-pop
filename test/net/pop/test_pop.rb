@@ -64,6 +64,30 @@ class TestPOP < Test::Unit::TestCase
     end
   end
 
+  def test_pop_user_crlf_injection
+    pop_test(false) do |pop|
+      assert_raise ArgumentError do
+        pop.start("user\r\nDELE 1", @users[@ok_user])
+      end
+    end
+  end
+
+  def test_pop_pass_crlf_injection
+    pop_test(false) do |pop|
+      assert_raise ArgumentError do
+        pop.start(@ok_user, "pass\r\nDELE 1")
+      end
+    end
+  end
+
+  def test_apop_crlf_injection
+    pop_test(@stamp_base) do |pop|
+      assert_raise ArgumentError do
+        pop.start("user\r\nDELE 1", @users[@ok_user])
+      end
+    end
+  end
+
   def test_popmail
     # totally not representative of real messages, but
     # enough to test frozen bugs
