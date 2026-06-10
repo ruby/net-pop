@@ -984,13 +984,20 @@ module Net
     private
 
     def getok(fmt, *fargs)
-      @socket.writeline sprintf(fmt, *fargs)
+      @socket.writeline validate_line(sprintf(fmt, *fargs))
       check_response(recv_response())
     end
 
     def get_response(fmt, *fargs)
-      @socket.writeline sprintf(fmt, *fargs)
+      @socket.writeline validate_line(sprintf(fmt, *fargs))
       recv_response()
+    end
+
+    def validate_line(line)
+      if /[\r\n]/.match?(line)
+        raise ArgumentError, "POP3 command cannot include CR/LF"
+      end
+      line
     end
 
     def recv_response
