@@ -417,6 +417,7 @@ module Net
     def initialize(addr, port = nil, isapop = false)
       @address = addr
       @ssl_params = POP3.ssl_params
+      @starttls = false
       @port = port
       @apop = isapop
 
@@ -439,7 +440,12 @@ module Net
 
     # does this instance use SSL?
     def use_ssl?
-      return !@ssl_params.nil?
+      return !@ssl_params.nil? && !starttls?
+    end
+
+    # does this instance use STARTTLS?
+    def starttls?
+      @starttls
     end
 
     # :call-seq:
@@ -459,10 +465,40 @@ module Net
       end
     end
 
+    # :call-seq:
+    #    Net::POP#enable_starttls(params = {})
+    #
+    # Enables STARTTLS for this instance.  Must be called before the connection is
+    # established to have any effect.
+    # +params[:port]+ is port to establish the SSL connection on; Defaults to 110.
+    # +params+ (except :port) is passed to OpenSSL::SSLContext#set_params.
+    def enable_starttls(verify_or_params = {}, certs = nil, port = nil)
+      @starttls = true
+      enable_ssl(verify_or_params, certs, port)
+    end
+
     # Disable SSL for all new instances.
     def disable_ssl
       @ssl_params = nil
+      @starttls = false
     end
+
+    alias disable_starttls disable_ssl
+
+    def ssl_connect(s)
+      raise 'openssl library not installed' unless defined?(OpenSSL)
+      context = OpenSSL::SSL::SSLContext.new
+      context.set_params(@ssl_params)
+      s = OpenSSL::SSL::SSLSocket.new(s, context)
+      s.hostname = @address
+      s.sync_close = true
+      ssl_socket_connect(s, @open_timeout)
+      if context.verify_mode != OpenSSL::SSL::VERIFY_NONE
+        s.post_connection_check(@address)
+      end
+      s
+    end
+    private :ssl_connect
 
     # Provide human-readable stringification of class state.
     def inspect
@@ -544,16 +580,7 @@ module Net
         TCPSocket.open(@address, port)
       end
       if use_ssl?
-        raise 'openssl library not installed' unless defined?(OpenSSL)
-        context = OpenSSL::SSL::SSLContext.new
-        context.set_params(@ssl_params)
-        s = OpenSSL::SSL::SSLSocket.new(s, context)
-        s.hostname = @address
-        s.sync_close = true
-        ssl_socket_connect(s, @open_timeout)
-        if context.verify_mode != OpenSSL::SSL::VERIFY_NONE
-          s.post_connection_check(@address)
-        end
+        s = ssl_connect(s)
       end
       @socket = InternetMessageIO.new(s,
                                       read_timeout: @read_timeout,
@@ -561,6 +588,16 @@ module Net
       logging "POP session started: #{@address}:#{@port} (#{@apop ? 'APOP' : 'POP'})"
       on_connect
       @command = POP3Command.new(@socket)
+      @command.recv_greeting
+
+      if starttls?
+        @command.stls
+        @socket = InternetMessageIO.new(ssl_connect(s),
+                                        read_timeout: @read_timeout,
+                                        debug_output: @debug_output)
+        @command.socket = @socket
+      end
+
       if apop?
         @command.apop account, password
       else
@@ -891,14 +928,17 @@ module Net
     def initialize(sock)
       @socket = sock
       @error_occurred = false
-      res = check_response(critical { recv_response() })
-      @apop_stamp = res.slice(/<[!-~]+@[!-~]+>/)
     end
 
-    attr_reader :socket
+    attr_accessor :socket
 
     def inspect
       +"#<#{self.class} socket=#{@socket}>"
+    end
+
+    def recv_greeting
+      res = check_response(critical { recv_response() })
+      @apop_stamp = res.slice(/<[!-~]+@[!-~]+>/)
     end
 
     def auth(account, password)
@@ -975,6 +1015,10 @@ module Net
           return table
         }
       end
+    end
+
+    def stls
+      critical { getok 'STLS' }
     end
 
     def quit
