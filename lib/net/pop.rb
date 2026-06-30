@@ -430,6 +430,7 @@ module Net
       @mails = nil
       @n_mails = nil
       @n_bytes = nil
+      @capabilities = nil
     end
 
     # Does this instance use APOP authentication?
@@ -691,6 +692,37 @@ module Net
       end
     end
 
+    # Returns truthy if the server reports support for +tag+ with +param+.
+    # Returns +nil+ when +tag+ is not supported.  Returns +false+ when +tag+ is
+    # supported but +param+ is not.
+    #
+    # If no +param+ is given, an array of the capability's parameters is
+    # returned.
+    def capable?(tag, param = nil)
+      capability = capabilities[tag.upcase] and
+        param ? capability&.include?(param.upcase) : capability
+    end
+
+    # Returns a hash of the server's reported capabilities.  The list is cached.
+    #
+    # Each key is a capability name, and each value is an array of that
+    # capability's parameters.
+    def capabilities;  @capabilities ||= command.capa end
+
+    # Clears capabilities that have been remembered by the Net::POP client.
+    # This forces a CAPA command to be sent the next time a #capabilities query
+    # method is called.
+    def clear_cached_capabilities; @capabilities = nil end
+
+    # Returns whether the server supports the +AUTH+ command using +mechanism+.
+    # If +mechanism+ isn't given, returns nil when the server doesn't support
+    # +SASL+ and an array of supported mechanism names otherwise.
+    def sasl_capable?(mechanism = nil) capable?("SASL", mechanism) end
+
+    # Returns the list of SASL mechanisms supported by the server, or an empty
+    # array if the server does not support any SASL authentication.
+    def sasl_mechanisms; sasl_capable? || [] end
+
     # Resets the session.  This clears all "deleted" marks from messages.
     #
     # This method raises a POPError if an error occurs.
@@ -916,6 +948,14 @@ module Net
                      account,
                      Digest::MD5.hexdigest(@apop_stamp + password))
       })
+    end
+
+    def capa
+      critical {
+        getok 'CAPA'
+        @socket.to_enum(:each_list_item)
+          .to_h {|line| tag, *params = line.upcase.split; [tag, params] }
+      }
     end
 
     def list
