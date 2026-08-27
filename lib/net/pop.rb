@@ -963,7 +963,7 @@ module Net
     def uidl(num = nil)
       if num
         res = check_response(critical { get_response('UIDL %d', num) })
-        return res.split(/ /)[1]
+        return res.split(' ')[2]
       else
         critical {
           getok('UIDL')
