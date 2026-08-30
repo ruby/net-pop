@@ -484,6 +484,7 @@ module Net
     #
     def set_debug_output(arg)
       @debug_output = arg
+      @socket.debug_output = arg if @socket
     end
 
     # The address to connect to.
