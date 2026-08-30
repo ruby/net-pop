@@ -336,7 +336,7 @@ module Net
     # Constructs proper parameters from arguments
     def POP3.create_ssl_params(verify_or_params = {}, certs = nil)
       begin
-        params = verify_or_params.to_hash
+        params = verify_or_params.to_hash.dup
       rescue NoMethodError
         params = {}
         params[:verify_mode] = verify_or_params
@@ -360,22 +360,26 @@ module Net
     #
     # see also POP3.enable_ssl
     def POP3.ssl_params
-      return @ssl_params
+      if instance_variable_defined?(:@ssl_params)
+        @ssl_params
+      elsif superclass.respond_to?(:ssl_params)
+        superclass.ssl_params
+      end
     end
 
     # returns +true+ if POP3.ssl_params is set
     def POP3.use_ssl?
-      return !@ssl_params.nil?
+      return !ssl_params.nil?
     end
 
     # returns whether verify_mode is enable from POP3.ssl_params
     def POP3.verify
-      return @ssl_params[:verify_mode]
+      return ssl_params[:verify_mode]
     end
 
     # returns the :ca_file or :ca_path from POP3.ssl_params
     def POP3.certs
-      return @ssl_params[:ca_file] || @ssl_params[:ca_path]
+      return ssl_params[:ca_file] || ssl_params[:ca_path]
     end
 
     #
@@ -416,7 +420,7 @@ module Net
     # This method does *not* open the TCP connection.
     def initialize(addr, port = nil, isapop = false)
       @address = addr
-      @ssl_params = POP3.ssl_params
+      @ssl_params = self.class.ssl_params&.dup
       @port = port
       @apop = isapop
 
