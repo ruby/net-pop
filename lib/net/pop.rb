@@ -699,6 +699,7 @@ module Net
       mails().each do |m|
         m.instance_eval {
           @deleted = false
+          @uid_fetched = false if @uid.nil?
         }
       end
     end
@@ -747,6 +748,7 @@ module Net
       @command = cmd
       @deleted = false
       @uid = nil
+      @uid_fetched = false
     end
 
     # The sequence number of the message on the server.
@@ -872,7 +874,7 @@ module Net
     #
     # This method raises a POPError if an error occurs.
     def unique_id
-      return @uid if @uid
+      return @uid if @uid_fetched
       @pop.set_all_uids
       @uid
     end
@@ -881,6 +883,7 @@ module Net
 
     def uid=(uid)   #:nodoc: internal use only
       @uid = uid
+      @uid_fetched = true
     end
 
   end   # class POPMail
