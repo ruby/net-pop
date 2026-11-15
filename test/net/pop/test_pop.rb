@@ -88,6 +88,13 @@ class TestPOP < Test::Unit::TestCase
     end
   end
 
+  def test_inspect_default_port
+    pop = Net::POP3.new('localhost')
+    assert_equal '#<Net::POP3 localhost:110 open=false>', pop.inspect
+    pop.enable_ssl
+    assert_equal '#<Net::POP3 localhost:995 open=false>', pop.inspect
+  end
+
   def test_popmail
     # totally not representative of real messages, but
     # enough to test frozen bugs
