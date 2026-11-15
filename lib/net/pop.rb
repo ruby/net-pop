@@ -466,7 +466,7 @@ module Net
 
     # Provide human-readable stringification of class state.
     def inspect
-      +"#<#{self.class} #{@address}:#{@port} open=#{@started}>"
+      +"#<#{self.class} #{@address}:#{port} open=#{@started}>"
     end
 
     # *WARNING*: This method causes a serious security hole.
@@ -558,7 +558,7 @@ module Net
       @socket = InternetMessageIO.new(s,
                                       read_timeout: @read_timeout,
                                       debug_output: @debug_output)
-      logging "POP session started: #{@address}:#{@port} (#{@apop ? 'APOP' : 'POP'})"
+      logging "POP session started: #{@address}:#{port} (#{@apop ? 'APOP' : 'POP'})"
       on_connect
       @command = POP3Command.new(@socket)
       if apop?
